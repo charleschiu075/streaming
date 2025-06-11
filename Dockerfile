@@ -1,9 +1,12 @@
 FROM node:18
 
 WORKDIR /app
-COPY server /app/server
-COPY public /app/public
 
-RUN cd server && npm install
+COPY package*.json ./
+RUN npm install
 
-CMD ["node", "server/server.js"]
+COPY . .
+
+EXPOSE 5000
+
+CMD ["node", "server.js"]
