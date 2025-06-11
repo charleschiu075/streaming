@@ -1,42 +1,249 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8" />
-  <title>註冊新帳號</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>註冊新帳號</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+}
+.register-container {
+    background: white;
+    padding: 40px;
+    border-radius: 10px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    width: 100%;
+    max-width: 400px;
+}
+h2 {
+    text-align: center;
+    color: #333;
+    margin-bottom: 30px;
+}
+.form-group {
+    margin-bottom: 20px;
+}
+input[type="text"], input[type="password"] {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #ddd;
+    border-radius: 5px;
+    font-size: 16px;
+    box-sizing: border-box;
+    transition: border-color 0.3s;
+}
+input[type="text"]:focus, input[type="password"]:focus {
+    outline: none;
+    border-color: #667eea;
+}
+button {
+    width: 100%;
+    background: #00b894;
+    color: white;
+    border: none;
+    padding: 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background 0.3s;
+}
+button:hover {
+    background: #00a085;
+}
+button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+.message {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 5px;
+    text-align: center;
+}
+.error {
+    background: #ffe6e6;
+    color: #d63031;
+    border: 1px solid #fab1a0;
+}
+.success {
+    background: #e6ffe6;
+    color: #00b894;
+    border: 1px solid #81ecec;
+}
+.links {
+    text-align: center;
+    margin-top: 20px;
+}
+.links a {
+    color: #667eea;
+    text-decoration: none;
+}
+.links a:hover {
+    text-decoration: underline;
+}
+.loading {
+    display: none;
+    text-align: center;
+    margin-top: 10px;
+}
+.password-requirements {
+    font-size: 12px;
+    color: #666;
+    margin-top: 5px;
+}
+</style>
 </head>
 <body>
-  <h2>使用者註冊</h2>
-  <form id="registerForm">
-    <input type="text" id="username" placeholder="使用者名稱" required /><br><br>
-    <input type="password" id="password" placeholder="密碼" required /><br><br>
-    <button type="submit">註冊</button>
-  </form>
+<div class="register-container">
+    <h2>使用者註冊</h2>
+    <form id="registerForm">
+        <div class="form-group">
+            <input type="text" id="username" placeholder="使用者名稱" required />
+            <div class="password-requirements">用戶名稱長度需 3-20 字元</div>
+        </div>
+        <div class="form-group">
+            <input type="password" id="password" placeholder="密碼" required />
+            <div class="password-requirements">密碼長度至少 6 字元</div>
+        </div>
+        <div class="form-group">
+            <input type="password" id="confirmPassword" placeholder="確認密碼" required />
+        </div>
+        <button type="submit" id="registerBtn">註冊</button>
+        <div class="loading" id="loading">註冊中...</div>
+    </form>
+    <div id="message"></div>
+    <div class="links">
+        <p>已經有帳號？<a href="login.html">前往登入</a></p>
+        <p><a href="watch.html">觀看直播</a></p>
+    </div>
+</div>
 
-  <p id="message"></p>
-  <p>已經有帳號？<a href="/login.html">前往登入</a></p>
+<script>
+function showMessage(text, type = 'error') {
+    const messageDiv = document.getElementById("message");
+    messageDiv.textContent = text;
+    messageDiv.className = `message ${type}`;
+}
 
-  <script>
-    document.getElementById("registerForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
+function showLoading(show = true) {
+    const loadingDiv = document.getElementById("loading");
+    const registerBtn = document.getElementById("registerBtn");
+    
+    if (show) {
+        loadingDiv.style.display = "block";
+        registerBtn.disabled = true;
+        registerBtn.textContent = "註冊中...";
+    } else {
+        loadingDiv.style.display = "none";
+        registerBtn.disabled = false;
+        registerBtn.textContent = "註冊";
+    }
+}
 
-      const username = document.getElementById("username").value;
-      const password = document.getElementById("password").value;
+function validateForm(username, password, confirmPassword) {
+    if (!username || !password || !confirmPassword) {
+        showMessage("請填寫所有欄位");
+        return false;
+    }
+    
+    if (username.length < 3 || username.length > 20) {
+        showMessage("用戶名稱長度需 3-20 字元");
+        return false;
+    }
+    
+    if (password.length < 6) {
+        showMessage("密碼長度至少需要 6 字元");
+        return false;
+    }
+    
+    if (password !== confirmPassword) {
+        showMessage("兩次輸入的密碼不相同");
+        return false;
+    }
+    
+    // 檢查用戶名稱格式（只允許字母、數字、底線）
+    const usernameRegex = /^[a-zA-Z0-9_]+$/;
+    if (!usernameRegex.test(username)) {
+        showMessage("用戶名稱只能包含字母、數字和底線");
+        return false;
+    }
+    
+    return true;
+}
 
-      const res = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
+document.getElementById("registerForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value;
+    const confirmPassword = document.getElementById("confirmPassword").value;
+    
+    if (!validateForm(username, password, confirmPassword)) {
+        return;
+    }
+    
+    showLoading(true);
+    
+    try {
+        const res = await fetch("/api/auth/register", {
+            method: "POST",
+            headers: { 
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            },
+            body: JSON.stringify({ username, password }),
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+            showMessage("註冊成功！正在跳轉到登入頁面...", "success");
+            
+            // 清空表單
+            document.getElementById("registerForm").reset();
+            
+            // 延遲跳轉以顯示成功訊息
+            setTimeout(() => {
+                window.location.href = "login.html";
+            }, 2000);
+            
+        } else {
+            showMessage(data.message || "註冊失敗，請稍後再試");
+        }
+        
+    } catch (error) {
+        console.error("註冊錯誤:", error);
+        showMessage("網路錯誤，請稍後再試");
+    } finally {
+        showLoading(false);
+    }
+});
 
-      const data = await res.json();
+// 即時密碼確認驗證
+document.getElementById("confirmPassword").addEventListener("input", function() {
+    const password = document.getElementById("password").value;
+    const confirmPassword = this.value;
+    
+    if (confirmPassword && password !== confirmPassword) {
+        this.style.borderColor = "#d63031";
+    } else {
+        this.style.borderColor = "#ddd";
+    }
+});
 
-      if (res.ok) {
-        alert("註冊成功，請登入！");
-        window.location.href = "/login.html";
-      } else {
-        document.getElementById("message").textContent = data.message || "註冊失敗";
-      }
-    });
-  </script>
+// Enter 鍵快捷註冊
+document.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        document.getElementById('registerForm').dispatchEvent(new Event('submit'));
+    }
+});
+</script>
 </body>
 </html>

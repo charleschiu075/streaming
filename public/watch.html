@@ -1,41 +1,285 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8" />
-  <title>觀看直播</title>
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>觀看直播</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #1a1a1a;
+    color: white;
+    margin: 0;
+    padding: 20px;
+}
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+h2 {
+    text-align: center;
+    color: #fff;
+    margin-bottom: 30px;
+}
+.search-section {
+    background: #2d2d2d;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    text-align: center;
+}
+.search-group {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+}
+input[type="text"] {
+    padding: 12px;
+    border: 2px solid #555;
+    border-radius: 5px;
+    font-size: 16px;
+    background: #1a1a1a;
+    color: white;
+    min-width: 250px;
+}
+input[type="text"]:focus {
+    outline: none;
+    border-color: #007bff;
+}
+button {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background 0.3s;
+}
+button:hover {
+    background: #0056b3;
+}
+button:disabled {
+    background: #555;
+    cursor: not-allowed;
+}
+.video-section {
+    background: #2d2d2d;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+}
+video {
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+    background: #000;
+}
+.video-placeholder {
+    width: 100%;
+    height: 360px;
+    background: #000;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #666;
+    font-size: 18px;
+    border: 2px dashed #555;
+}
+.status {
+    margin: 15px 0;
+    padding: 10px;
+    border-radius: 5px;
+    text-align: center;
+}
+.status.loading {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
+}
+.status.error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+.status.success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+.stream-info {
+    background: #343a40;
+    padding: 15px;
+    border-radius: 5px;
+    margin-top: 15px;
+    text-align: left;
+    font-size: 14px;
+}
+.controls {
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+.control-btn {
+    background: #28a745;
+    padding: 8px 16px;
+    font-size: 14px;
+}
+.control-btn.stop {
+    background: #dc3545;
+}
+.links {
+    text-align: center;
+    margin-top: 30px;
+}
+.links a {
+    color: #007bff;
+    text-decoration: none;
+    margin: 0 15px;
+}
+.links a:hover {
+    text-decoration: underline;
+}
+</style>
 </head>
 <body>
-  <h2>觀看直播</h2>
-  <input type="text" id="usernameInput" placeholder="輸入直播使用者帳號" />
-  <button onclick="loadStream()">播放</button>
+<div class="container">
+    <h2>觀看直播</h2>
+    
+    <div class="search-section">
+        <h3>輸入直播主帳號</h3>
+        <div class="search-group">
+            <input type="text" id="usernameInput" placeholder="輸入直播使用者帳號" />
+            <button onclick="loadStream()" id="playBtn">播放</button>
+        </div>
+    </div>
+    
+    <div class="video-section">
+        <div id="videoContainer">
+            <div class="video-placeholder" id="placeholder">
+                請輸入直播主帳號並點擊播放
+            </div>
+            <video id="video" width="640" height="360" controls style="display: none;"></video>
+        </div>
+        
+        <div id="status"></div>
+        
+        <div class="controls" id="controls" style="display: none;">
+            <button class="control-btn" onclick="playStream()">播放</button>
+            <button class="control-btn" onclick="pauseStream()">暫停</button>
+            <button class="control-btn stop" onclick="stopStream()">停止</button>
+            <button class="control-btn" onclick="toggleMute()">靜音/取消靜音</button>
+        </div>
+        
+        <div class="stream-info" id="streamInfo" style="display: none;">
+            <div><strong>串流網址：</strong> <span id="streamUrl"></span></div>
+            <div><strong>狀態：</strong> <span id="streamStatus">就緒</span></div>
+        </div>
+    </div>
+    
+    <div class="links">
+        <a href="login.html">登入</a>
+        <a href="register.html">註冊</a>
+        <a href="dashboard.html">控制台</a>
+    </div>
+</div>
 
-  <div style="margin-top:20px;">
-    <video id="video" width="640" height="360" controls></video>
-  </div>
+<script>
+let hls = null;
+let currentUsername = null;
 
-  <script>
-    function loadStream() {
-      const username = document.getElementById("usernameInput").value;
-      const video = document.getElementById("video");
-      const streamUrl = `http://${process.env.HOSTIP}:8000/live/${username}/index.m3u8`;
+function showStatus(message, type = 'loading') {
+    const statusDiv = document.getElementById('status');
+    statusDiv.textContent = message;
+    statusDiv.className = `status ${type}`;
+    statusDiv.style.display = 'block';
+}
 
-      if (Hls.isSupported()) {
-        const hls = new Hls();
+function hideStatus() {
+    const statusDiv = document.getElementById('status');
+    statusDiv.style.display = 'none';
+}
+
+function showStreamInfo(username, streamUrl) {
+    document.getElementById('streamUrl').textContent = streamUrl;
+    document.getElementById('streamStatus').textContent = '連接中...';
+    document.getElementById('streamInfo').style.display = 'block';
+}
+
+function updateStreamStatus(status) {
+    const statusElement = document.getElementById('streamStatus');
+    if (statusElement) {
+        statusElement.textContent = status;
+    }
+}
+
+function showVideo() {
+    document.getElementById('placeholder').style.display = 'none';
+    document.getElementById('video').style.display = 'block';
+    document.getElementById('controls').style.display = 'flex';
+}
+
+function hideVideo() {
+    document.getElementById('placeholder').style.display = 'flex';
+    document.getElementById('video').style.display = 'none';
+    document.getElementById('controls').style.display = 'none';
+    document.getElementById('streamInfo').style.display = 'none';
+}
+
+function loadStream() {
+    const username = document.getElementById("usernameInput").value.trim();
+    
+    if (!username) {
+        showStatus("請輸入直播主帳號", "error");
+        return;
+    }
+    
+    const video = document.getElementById("video");
+    const HOSTIP = "3.107.21.209";
+    const streamUrl = `http://${HOSTIP}:8000/live/${username}/index.m3u8`;
+    
+    currentUsername = username;
+    showStatus("正在載入直播...", "loading");
+    showStreamInfo(username, streamUrl);
+    
+    // 清理之前的 HLS 實例
+    if (hls) {
+        hls.destroy();
+        hls = null;
+    }
+    
+    if (Hls.isSupported()) {
+        hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: true,
+            backBufferLength: 90
+        });
+        
         hls.loadSource(streamUrl);
         hls.attachMedia(video);
+        
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          video.play();
+            showStatus("串流載入成功，開始播放", "success");
+            updateStreamStatus("已連接");
+            showVideo();
+            video.play().catch(e => {
+                console.error("自動播放失敗:", e);
+                showStatus("請手動點擊播放按鈕", "error");
+            });
+            
+            setTimeout(() => {
+                hideStatus();
+            }, 3000);
         });
-      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = streamUrl;
-        video.addEventListener("loadedmetadata", () => {
-          video.play();
+        
+        hls.on(Hls.Events.ERROR, (event, data) => {
+            console.error("HLS 錯誤:", data);
+            updateStreamStatus("連接錯誤");
         });
-      } else {
-        alert("你的瀏覽器不支援 HLS 播放！");
-      }
-    }
-  </script>
-</body>
-</html>
+    }}
