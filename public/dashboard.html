@@ -1,36 +1,146 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8" />
-  <title>直播控制台</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>直播控制台</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #f5f5f5;
+}
+.container {
+    background: white;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+.info-box {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 5px;
+    margin: 10px 0;
+    border-left: 4px solid #007bff;
+}
+.stream-info {
+    background: #e8f5e8;
+    border-left-color: #28a745;
+}
+code {
+    background: #f1f1f1;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+}
+button {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+}
+button:hover {
+    background: #c82333;
+}
+.link-button {
+    background: #007bff;
+    color: white;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 5px;
+    display: inline-block;
+    margin: 5px 0;
+}
+.link-button:hover {
+    background: #0056b3;
+}
+</style>
 </head>
 <body>
-  <h2>歡迎，<span id="username"></span></h2>
+<div class="container">
+    <h2>歡迎，<span id="username"></span></h2>
+    
+    <div class="info-box">
+        <p><strong>推流位址 (OBS)：</strong></p>
+        <code id="rtmpUrl">rtmp://3.107.21.209:1935/live</code>
+    </div>
+    
+    <div class="info-box">
+        <p><strong>你的 Stream Key：</strong></p>
+        <code id="streamKey"></code>
+    </div>
+    
+    <div class="info-box stream-info">
+        <p><strong>直播觀看連結：</strong></p>
+        <code id="watchUrl"></code><br>
+        <a id="watchLink" href="" target="_blank" class="link-button">在新視窗觀看</a>
+    </div>
+    
+    <div class="info-box">
+        <p><strong>分享給觀眾：</strong></p>
+        <a href="watch.html" target="_blank" class="link-button">觀看頁面</a>
+    </div>
+    
+    <button onclick="logout()">登出</button>
+</div>
 
-  <p><strong>推流位址 (OBS)：</strong> <code>rtmp://3.107.21.209:1935/live</code></p>
-  <p><strong>你的 Stream Key：</strong> <span id="streamKey"></span></p>
-  <p><strong>直播觀看連結：</strong> <a id="watchLink" href="" target="_blank"></a></p>
+<script>
+// 從記憶體變數獲取用戶資訊（而非 localStorage）
+let userInfo = null;
 
-  <button onclick="logout()">登出</button>
+// 檢查用戶是否已登入
+function checkAuth() {
+    // 嘗試從 sessionStorage 獲取（臨時存儲）
+    const sessionData = sessionStorage.getItem('userSession');
+    if (sessionData) {
+        try {
+            userInfo = JSON.parse(sessionData);
+            return true;
+        } catch (e) {
+            console.error('解析用戶資訊失敗:', e);
+        }
+    }
+    return false;
+}
 
-  <script>
-    const username = localStorage.getItem("username");
-    const streamKey = localStorage.getItem("streamKey");
-    const HOSTIP = "3.107.21.209";
-    if (!username || !streamKey) {
-      alert("請先登入！");
-      window.location.href = "/login.html";
+// 初始化頁面
+function initDashboard() {
+    if (!checkAuth()) {
+        alert("請先登入！");
+        window.location.href = "login.html";
+        return;
     }
 
+    const HOSTIP = "3.107.21.209";
+    const username = userInfo.username;
+    const streamKey = userInfo.streamKey;
+    
+    // 更新頁面內容
     document.getElementById("username").textContent = username;
     document.getElementById("streamKey").textContent = streamKey;
-    document.getElementById("watchLink").textContent = `http://${HOSTIP}:8000/live/${username}/index.m3u8`;
-    document.getElementById("watchLink").href = `http://${HOSTIP}:8000/live/${username}/index.m3u8`;
+    
+    // 設定觀看連結
+    const watchUrl = `http://${HOSTIP}:8000/live/${username}/index.m3u8`;
+    document.getElementById("watchUrl").textContent = watchUrl;
+    document.getElementById("watchLink").href = watchUrl;
+}
 
-    function logout() {
-      localStorage.clear();
-      window.location.href = "/login.html";
-    }
-  </script>
+function logout() {
+    // 清除所有存儲的資訊
+    sessionStorage.clear();
+    userInfo = null;
+    
+    // 重定向到登入頁面
+    window.location.href = "login.html";
+}
+
+// 頁面載入時初始化
+window.addEventListener('load', initDashboard);
+</script>
 </body>
 </html>
