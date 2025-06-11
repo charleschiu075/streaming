@@ -7,7 +7,7 @@
 <body>
   <h2>歡迎，<span id="username"></span></h2>
 
-  <p><strong>推流位址 (OBS)：</strong> <code>rtmp://localhost:1935/live</code></p>
+  <p><strong>推流位址 (OBS)：</strong> <code>rtmp://3.107.21.209:1935/live</code></p>
   <p><strong>你的 Stream Key：</strong> <span id="streamKey"></span></p>
   <p><strong>直播觀看連結：</strong> <a id="watchLink" href="" target="_blank"></a></p>
 
@@ -16,7 +16,7 @@
   <script>
     const username = localStorage.getItem("username");
     const streamKey = localStorage.getItem("streamKey");
-
+    const HOSTIP = "3.107.21.209";
     if (!username || !streamKey) {
       alert("請先登入！");
       window.location.href = "/login.html";
@@ -24,8 +24,8 @@
 
     document.getElementById("username").textContent = username;
     document.getElementById("streamKey").textContent = streamKey;
-    document.getElementById("watchLink").textContent = `http://${process.env.HOSTIP}:8000/live/${username}/index.m3u8`;
-    document.getElementById("watchLink").href = `http://${process.env.HOSTIP}:8000/live/${username}/index.m3u8`;
+    document.getElementById("watchLink").textContent = `http://${HOSTIP}:8000/live/${username}/index.m3u8`;
+    document.getElementById("watchLink").href = `http://${HOSTIP}:8000/live/${username}/index.m3u8`;
 
     function logout() {
       localStorage.clear();
