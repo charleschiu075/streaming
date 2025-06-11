@@ -1,23 +1,14 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
-  <title>Live Stream</title>
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <meta charset="UTF-8" />
+  <title>影音直播平台</title>
 </head>
 <body>
-  <h1>Live Stream</h1>
-  <video id="video" controls autoplay width="1920" height="1080"></video>
-  <script>
-    const video = document.getElementById('video');
-    const videoSrc = 'http://3.107.21.209:8080/hls/stream.m3u8';
-    if (Hls.isSupported()) {
-      const hls = new Hls();
-      hls.loadSource(videoSrc);
-      hls.attachMedia(video);
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = videoSrc;
-    }
-  </script>
+  <h1>歡迎來到影音直播平台</h1>
+
+  <p><a href="/register.html">註冊帳號</a></p>
+  <p><a href="/login.html">登入帳號</a></p>
+  <p><a href="/watch.html">觀看直播</a></p>
 </body>
 </html>

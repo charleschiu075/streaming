@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>註冊新帳號</title>
+</head>
+<body>
+  <h2>使用者註冊</h2>
+  <form id="registerForm">
+    <input type="text" id="username" placeholder="使用者名稱" required /><br><br>
+    <input type="password" id="password" placeholder="密碼" required /><br><br>
+    <button type="submit">註冊</button>
+  </form>
+
+  <p id="message"></p>
+  <p>已經有帳號？<a href="/login.html">前往登入</a></p>
+
+  <script>
+    document.getElementById("registerForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        alert("註冊成功，請登入！");
+        window.location.href = "/login.html";
+      } else {
+        document.getElementById("message").textContent = data.message || "註冊失敗";
+      }
+    });
+  </script>
+</body>
+</html>
