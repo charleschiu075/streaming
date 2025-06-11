@@ -1,9 +1,0 @@
-server/.env
-
-docker-compose.yml
-
-Dockerfile
-
-server/package-lock.json
-
-server/node_modules
