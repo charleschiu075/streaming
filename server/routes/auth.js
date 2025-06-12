@@ -10,7 +10,7 @@ let verifyToken;
 
 try {
     User = require('../models/User');
-    const authMiddleware = require('../middleware/authmiddleware');
+    const authMiddleware = require('../middleware/authMiddleware');
     verifyToken = authMiddleware.verifyToken;
 } catch (error) {
     console.error('模塊導入錯誤:', error);

@@ -9,7 +9,7 @@ let streamMiddleware;
 
 try {
     User = require('../models/User');
-    const authMiddleware = require('../middleware/authmiddleware');
+    const authMiddleware = require('../middleware/authMiddleware');
     streamMiddleware = require('../middleware/streamMiddleware');
     verifyToken = authMiddleware.verifyToken;
 } catch (error) {
