@@ -281,5 +281,95 @@ function loadStream() {
         hls.on(Hls.Events.ERROR, (event, data) => {
             console.error("HLS 錯誤:", data);
             updateStreamStatus("連接錯誤");
+            
+            if (data.fatal) {
+                switch (data.type) {
+                    case Hls.ErrorTypes.NETWORK_ERROR:
+                        showStatus("網路連接錯誤，請檢查網路連接", "error");
+                        break;
+                    case Hls.ErrorTypes.MEDIA_ERROR:
+                        showStatus("媒體錯誤，嘗試恢復...", "error");
+                        hls.recoverMediaError();
+                        break;
+                    default:
+                        showStatus("播放錯誤，請稍後再試", "error");
+                        hls.destroy();
+                        hls = null;
+                        break;
+                }
+            }
         });
-    }}
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        // Safari 原生支援 HLS
+        video.src = streamUrl;
+        video.addEventListener('loadedmetadata', () => {
+            showStatus("串流載入成功，開始播放", "success");
+            updateStreamStatus("已連接");
+            showVideo();
+            video.play().catch(e => {
+                console.error("自動播放失敗:", e);
+                showStatus("請手動點擊播放按鈕", "error");
+            });
+            
+            setTimeout(() => {
+                hideStatus();
+            }, 3000);
+        });
+        
+        video.addEventListener('error', () => {
+            showStatus("播放錯誤，請檢查直播是否存在", "error");
+            updateStreamStatus("連接錯誤");
+        });
+    } else {
+        showStatus("您的瀏覽器不支援 HLS 播放", "error");
+    }
+}
+
+// 播放控制函數
+function playStream() {
+    const video = document.getElementById("video");
+    if (video) {
+        video.play().catch(e => {
+            console.error("播放失敗:", e);
+            showStatus("播放失敗", "error");
+        });
+    }
+}
+
+function pauseStream() {
+    const video = document.getElementById("video");
+    if (video) {
+        video.pause();
+    }
+}
+
+function stopStream() {
+    const video = document.getElementById("video");
+    if (video) {
+        video.pause();
+        video.currentTime = 0;
+    }
+    
+    if (hls) {
+        hls.destroy();
+        hls = null;
+    }
+    
+    hideVideo();
+    hideStatus();
+    currentUsername = null;
+}
+
+function toggleMute() {
+    const video = document.getElementById("video");
+    if (video) {
+        video.muted = !video.muted;
+    }
+}
+
+// Enter 鍵快捷播放
+document.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter' && document.getElementById('usernameInput') === document.activeElement) {
+        loadStream();
+    }
+});

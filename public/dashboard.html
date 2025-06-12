@@ -95,19 +95,16 @@ let userInfo = null;
 
 // 檢查用戶是否已登入
 function checkAuth() {
-    // 嘗試從 sessionStorage 獲取（臨時存儲）
-    const sessionData = sessionStorage.getItem('userSession');
+// 嘗試從 localStorage 獲取
+    const sessionData = localStorage.getItem('userSession');
     if (sessionData) {
         try {
             userInfo = JSON.parse(sessionData);
             return true;
-        } catch (e) {
-            console.error('解析用戶資訊失敗:', e);
-        }
+        } catch (e) {console.error('解析用戶資訊失敗:', e);}
     }
-    return false;
-}
-
+    return false
+;}
 // 初始化頁面
 function initDashboard() {
     if (!checkAuth()) {
@@ -132,9 +129,8 @@ function initDashboard() {
 
 function logout() {
     // 清除所有存儲的資訊
-    sessionStorage.clear();
+    localStorage.clear();
     userInfo = null;
-    
     // 重定向到登入頁面
     window.location.href = "login.html";
 }
