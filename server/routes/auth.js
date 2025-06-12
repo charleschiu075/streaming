@@ -2,9 +2,19 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
 const { v4: uuidv4 } = require('uuid');
-const { verifyToken } = require('../middleware/auth');
+
+// 確保正確導入 User 模型和中間件
+let User;
+let verifyToken;
+
+try {
+    User = require('../models/User');
+    const authMiddleware = require('../middleware/authmiddleware');
+    verifyToken = authMiddleware.verifyToken;
+} catch (error) {
+    console.error('模塊導入錯誤:', error);
+}
 
 /**
  * 輸入驗證函數
@@ -62,7 +72,7 @@ const generateToken = (user) => {
     }
     
     const payload = {
-        id: user._id,
+        id: user._id.toString(), // 確保 ID 是字符串
         username: user.username,
         streamKey: user.streamKey
     };
@@ -80,6 +90,15 @@ const generateToken = (user) => {
 router.post('/register', async (req, res) => {
     try {
         const { username, password } = req.body;
+        
+        // 檢查必要的依賴是否存在
+        if (!User) {
+            return res.status(500).json({
+                success: false,
+                message: '服務器配置錯誤',
+                code: 'SERVER_CONFIG_ERROR'
+            });
+        }
         
         // 輸入驗證
         const validationErrors = validateRegistration(username, password);
@@ -141,7 +160,7 @@ router.post('/register', async (req, res) => {
             isActive: true
         });
         
-        await newUser.save();
+        const savedUser = await newUser.save();
         
         console.log(`[AUTH] 新用戶註冊成功: ${username}`);
         
@@ -149,9 +168,9 @@ router.post('/register', async (req, res) => {
             success: true,
             message: '註冊成功',
             data: {
-                username: newUser.username,
-                streamKey: newUser.streamKey,
-                createdAt: newUser.createdAt
+                username: savedUser.username,
+                streamKey: savedUser.streamKey,
+                createdAt: savedUser.createdAt
             }
         });
         
@@ -181,6 +200,15 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
     try {
         const { username, password } = req.body;
+        
+        // 檢查必要的依賴是否存在
+        if (!User) {
+            return res.status(500).json({
+                success: false,
+                message: '服務器配置錯誤',
+                code: 'SERVER_CONFIG_ERROR'
+            });
+        }
         
         // 輸入驗證
         const validationErrors = validateLogin(username, password);
@@ -259,6 +287,14 @@ router.post('/login', async (req, res) => {
  */
 router.post('/refresh', verifyToken, async (req, res) => {
     try {
+        if (!User) {
+            return res.status(500).json({
+                success: false,
+                message: '服務器配置錯誤',
+                code: 'SERVER_CONFIG_ERROR'
+            });
+        }
+        
         const user = await User.findById(req.user.id);
         if (!user || !user.isActive) {
             return res.status(401).json({
@@ -295,6 +331,14 @@ router.post('/refresh', verifyToken, async (req, res) => {
  */
 router.get('/profile', verifyToken, async (req, res) => {
     try {
+        if (!User) {
+            return res.status(500).json({
+                success: false,
+                message: '服務器配置錯誤',
+                code: 'SERVER_CONFIG_ERROR'
+            });
+        }
+        
         const user = await User.findById(req.user.id).select('-password');
         if (!user) {
             return res.status(404).json({
