@@ -1,6 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
+const { performance } = require('perf_hooks');
+
+// 快取設定
+const CACHE_TTL = 60000; // 1分鐘
+const streamStatusCache = new Map();
+const onlineUsersCache = new Map();
 
 // 安全導入模組和middleware
 let User;
@@ -60,6 +66,47 @@ const {
     limitResults = () => (req, res, next) => next()
 } = streamMiddleware || {};
 
+// 效能監控中間件
+const performanceMonitor = (req, res, next) => {
+    const start = performance.now();
+    res.on('finish', () => {
+        const duration = performance.now() - start;
+        console.log(`[PERF] ${req.method} ${req.path} - ${duration.toFixed(2)}ms`);
+    });
+    next();
+};
+
+// 錯誤處理中間件
+const errorHandler = (err, req, res, next) => {
+    console.error('[ERROR]', err);
+    res.status(500).json({
+        success: false,
+        message: '伺服器內部錯誤',
+        code: 'INTERNAL_SERVER_ERROR'
+    });
+};
+
+// 快取清理函數
+const cleanupCache = () => {
+    const now = Date.now();
+    for (const [key, value] of streamStatusCache.entries()) {
+        if (now - value.timestamp > CACHE_TTL) {
+            streamStatusCache.delete(key);
+        }
+    }
+    for (const [key, value] of onlineUsersCache.entries()) {
+        if (now - value.timestamp > CACHE_TTL) {
+            onlineUsersCache.delete(key);
+        }
+    }
+};
+
+// 定期清理快取
+setInterval(cleanupCache, CACHE_TTL);
+
+// 套用全域中間件
+router.use(performanceMonitor);
+
 /**
  * RTMP on_publish 驗證接口
  * Nginx 以 POST 送来 stream key 訊息
@@ -116,6 +163,11 @@ router.post('/verify',
             
             if (updateResult.acknowledged) {
                 console.log(`[RTMP] ✅ 驗證成功: ${user.username} (${streamKey ? streamKey.substring(0, 10) : 'unknown'}...)`);
+                // 更新快取
+                streamStatusCache.set(user.username, {
+                    isStreaming: true,
+                    timestamp: Date.now()
+                });
             }
             
             // 返回成功（Nginx 需要 200 状态码）
@@ -164,6 +216,11 @@ router.post('/end',
                         { _id: user._id },
                         { lastStreamEndTime: new Date() }
                     );
+                    // 更新快取
+                    streamStatusCache.set(user.username, {
+                        isStreaming: false,
+                        timestamp: Date.now()
+                    });
                     console.log(`[RTMP] 推流结束: ${user.username}`);
                 }
             }
@@ -349,6 +406,21 @@ router.get('/public/:username',
 
             const { username } = req.params;
             
+            // 檢查快取
+            const cachedStatus = streamStatusCache.get(username);
+            if (cachedStatus && Date.now() - cachedStatus.timestamp < CACHE_TTL) {
+                return res.json({
+                    success: true,
+                    data: {
+                        username,
+                        isStreaming: cachedStatus.isStreaming,
+                        status: cachedStatus.isStreaming ? 'online' : 'offline',
+                        watchUrl: generateStreamUrls(username).watchUrl,
+                        lastStreamTime: cachedStatus.isStreaming ? new Date() : null
+                    }
+                });
+            }
+            
             const user = await User.findOne({ 
                 username: { $regex: new RegExp(`^${username}$`, 'i') }
             }).select('username lastStreamTime isActive');
@@ -363,6 +435,12 @@ router.get('/public/:username',
             
             // 使用格式化函數建構響應數據
             const responseData = formatUserStreamData(user, false);
+            
+            // 更新快取
+            streamStatusCache.set(username, {
+                isStreaming: responseData.isStreaming,
+                timestamp: Date.now()
+            });
             
             res.json({
                 success: true,
@@ -396,6 +474,15 @@ router.get('/online',
                 });
             }
 
+            // 檢查快取
+            const cachedData = onlineUsersCache.get('all');
+            if (cachedData && Date.now() - cachedData.timestamp < CACHE_TTL) {
+                return res.json({
+                    success: true,
+                    data: cachedData.data
+                });
+            }
+
             // 查找最近1分鐘內有推流的用戶
             const oneMinuteAgo = new Date(Date.now() - 60000);
             
@@ -410,13 +497,21 @@ router.get('/online',
                 streamStartTime: user.lastStreamTime
             }));
             
+            const responseData = {
+                onlineCount: formattedUsers.length,
+                users: formattedUsers,
+                timestamp: new Date().toISOString()
+            };
+            
+            // 更新快取
+            onlineUsersCache.set('all', {
+                data: responseData,
+                timestamp: Date.now()
+            });
+            
             res.json({
                 success: true,
-                data: {
-                    onlineCount: formattedUsers.length,
-                    users: formattedUsers,
-                    timestamp: new Date().toISOString()
-                }
+                data: responseData
             });
             
         } catch (error) {
@@ -443,6 +538,10 @@ router.get('/health', (req, res) => {
             User: !!User,
             verifyToken: !!verifyToken,
             streamMiddleware: !!streamMiddleware
+        },
+        cache: {
+            streamStatus: streamStatusCache.size,
+            onlineUsers: onlineUsersCache.size
         }
     };
     
@@ -501,5 +600,30 @@ router.get('/stats',
         }
     }
 );
+
+// 輔助函數
+async function generateUniqueStreamKey(username) {
+    let newStreamKey;
+    let isUnique = false;
+    let attempts = 0;
+    const maxAttempts = 5;
+    
+    while (!isUnique && attempts < maxAttempts) {
+        const timestamp = Date.now().toString(36);
+        const randomPart = uuidv4().replace(/-/g, '').substring(0, 16);
+        newStreamKey = `${username}_${timestamp}_${randomPart}`;
+        
+        const existingUser = await User.findOne({ streamKey: newStreamKey });
+        if (!existingUser) {
+            isUnique = true;
+        }
+        attempts++;
+    }
+    
+    return isUnique ? newStreamKey : null;
+}
+
+// 錯誤處理中間件
+router.use(errorHandler);
 
 module.exports = router;

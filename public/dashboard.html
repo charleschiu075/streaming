@@ -18,31 +18,64 @@ body {
     border-radius: 10px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
+.header {
+    text-align: center;
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid #e9ecef;
+}
 .info-box {
     background: #f8f9fa;
     padding: 15px;
     border-radius: 5px;
-    margin: 10px 0;
+    margin: 15px 0;
     border-left: 4px solid #007bff;
 }
 .stream-info {
     background: #e8f5e8;
     border-left-color: #28a745;
 }
+.warning-info {
+    background: #fff3cd;
+    border-left-color: #ffc107;
+}
 code {
     background: #f1f1f1;
-    padding: 2px 5px;
+    padding: 4px 8px;
     border-radius: 3px;
     font-family: 'Courier New', monospace;
+    font-size: 14px;
+    word-break: break-all;
+    display: inline-block;
+    margin: 5px 0;
+    max-width: 100%;
+}
+.code-container {
+    position: relative;
+    margin: 10px 0;
+}
+.copy-btn {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+    margin-left: 10px;
+}
+.copy-btn:hover {
+    background: #5a6268;
 }
 button {
     background: #dc3545;
     color: white;
     border: none;
-    padding: 10px 20px;
+    padding: 12px 24px;
     border-radius: 5px;
     cursor: pointer;
     font-size: 16px;
+    transition: background 0.3s;
 }
 button:hover {
     background: #c82333;
@@ -51,92 +84,368 @@ button:hover {
     background: #007bff;
     color: white;
     text-decoration: none;
-    padding: 8px 16px;
+    padding: 10px 20px;
     border-radius: 5px;
     display: inline-block;
-    margin: 5px 0;
+    margin: 8px 5px;
+    transition: background 0.3s;
 }
 .link-button:hover {
     background: #0056b3;
+}
+.link-button.success {
+    background: #28a745;
+}
+.link-button.success:hover {
+    background: #218838;
+}
+.status-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+.status-online {
+    background: #28a745;
+    animation: pulse 2s infinite;
+}
+.status-offline {
+    background: #dc3545;
+}
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+.error-message {
+    background: #f8d7da;
+    color: #721c24;
+    padding: 10px;
+    border-radius: 5px;
+    margin: 10px 0;
+    border: 1px solid #f5c6cb;
+}
+.success-message {
+    background: #d4edda;
+    color: #155724;
+    padding: 10px;
+    border-radius: 5px;
+    margin: 10px 0;
+    border: 1px solid #c3e6cb;
 }
 </style>
 </head>
 <body>
 <div class="container">
-    <h2>歡迎，<span id="username"></span></h2>
-    
-    <div class="info-box">
-        <p><strong>推流位址 (OBS)：</strong></p>
-        <code id="rtmpUrl">rtmp://3.107.21.209:1935/live</code>
+    <div class="header">
+        <h2>
+            <span class="status-indicator" id="statusIndicator"></span>
+            歡迎，<span id="username">載入中...</span>
+        </h2>
+        <p id="loginTime"></p>
     </div>
     
+    <div id="errorMessage" class="error-message" style="display: none;"></div>
+    <div id="successMessage" class="success-message" style="display: none;"></div>
+    
     <div class="info-box">
-        <p><strong>你的 Stream Key：</strong></p>
-        <code id="streamKey"></code>
+        <p><strong>🎥 推流設定 (OBS Studio)：</strong></p>
+        <p><strong>伺服器 URL：</strong></p>
+        <div class="code-container">
+            <code id="rtmpUrl">rtmp://3.107.21.209:1935/live</code>
+            <button class="copy-btn" onclick="copyToClipboard('rtmpUrl')">複製</button>
+        </div>
+        <p><strong>串流金鑰：</strong></p>
+        <div class="code-container">
+            <code id="streamKey">載入中...</code>
+            <button class="copy-btn" onclick="copyToClipboard('streamKey')">複製</button>
+        </div>
     </div>
     
     <div class="info-box stream-info">
-        <p><strong>直播觀看連結：</strong></p>
-        <code id="watchUrl"></code><br>
-        <a id="watchLink" href="" target="_blank" class="link-button">在新視窗觀看</a>
+        <p><strong>📺 直播觀看資訊：</strong></p>
+        <p><strong>HLS 串流網址：</strong></p>
+        <div class="code-container">
+            <code id="watchUrl">載入中...</code>
+            <button class="copy-btn" onclick="copyToClipboard('watchUrl')">複製</button>
+        </div>
+        <div style="margin-top: 15px;">
+            <a id="directWatchLink" href="#" target="_blank" class="link-button success">🎬 直接觀看</a>
+            <a id="userWatchLink" href="#" target="_blank" class="link-button">👥 觀看頁面</a>
+        </div>
     </div>
     
-    <div class="info-box">
-        <p><strong>分享給觀眾：</strong></p>
-        <a href="watch.html" target="_blank" class="link-button">觀看頁面</a>
+    <div class="info-box warning-info">
+        <p><strong>⚠️ 注意事項：</strong></p>
+        <ul>
+            <li>開始推流前，請確保 OBS 已正確設定上述參數</li>
+            <li>推流開始後約需 10-30 秒才能在觀看頁面看到畫面</li>
+            <li>如果觀看頁面無法載入，請檢查推流是否已開始</li>
+            <li>登出後將清除所有本地資料</li>
+        </ul>
     </div>
     
-    <button onclick="logout()">登出</button>
+    <div style="text-align: center; margin-top: 30px;">
+        <button onclick="testStreamConnection()" style="background: #28a745; margin-right: 10px;">測試連線</button>
+        <button onclick="logout()">登出</button>
+    </div>
 </div>
 
 <script>
-// 從記憶體變數獲取用戶資訊（而非 localStorage）
+// 全域變數
 let userInfo = null;
+const HOSTIP = "3.107.21.209";
+const TOKEN_REFRESH_INTERVAL = 5 * 60 * 1000; // 5分鐘
+let tokenRefreshInterval = null;
 
-// 檢查用戶是否已登入
-function checkAuth() {
-// 嘗試從 localStorage 獲取
-    const sessionData = localStorage.getItem('userSession');
-    if (sessionData) {
-        try {
-            userInfo = JSON.parse(sessionData);
-            return true;
-        } catch (e) {console.error('解析用戶資訊失敗:', e);}
+// 顯示訊息函數
+function showMessage(message, type = 'error') {
+    const errorDiv = document.getElementById('errorMessage');
+    const successDiv = document.getElementById('successMessage');
+    
+    if (type === 'error') {
+        errorDiv.textContent = message;
+        errorDiv.style.display = 'block';
+        successDiv.style.display = 'none';
+    } else {
+        successDiv.textContent = message;
+        successDiv.style.display = 'block';
+        errorDiv.style.display = 'none';
     }
-    return false
-;}
-// 初始化頁面
-function initDashboard() {
-    if (!checkAuth()) {
-        alert("請先登入！");
-        window.location.href = "login.html";
+}
+
+// 隱藏訊息
+function hideMessage() {
+    const errorDiv = document.getElementById('errorMessage');
+    const successDiv = document.getElementById('successMessage');
+    errorDiv.style.display = 'none';
+    successDiv.style.display = 'none';
+}
+
+// 更新串流資訊
+function updateStreamInfo() {
+    if (!userInfo) return;
+    
+    document.getElementById('username').textContent = userInfo.username;
+    document.getElementById('streamKey').textContent = userInfo.streamKey;
+    document.getElementById('rtmpUrl').textContent = `rtmp://${HOSTIP}:1935/live`;
+    document.getElementById('watchUrl').textContent = `http://${HOSTIP}:8000/hls/${userInfo.username}/index.m3u8`;
+    
+    // 更新觀看連結
+    const directWatchLink = document.getElementById('directWatchLink');
+    const userWatchLink = document.getElementById('userWatchLink');
+    directWatchLink.href = `http://${HOSTIP}:8000/watch.html?username=${userInfo.username}`;
+    userWatchLink.href = `http://${HOSTIP}:8000/user/${userInfo.username}`;
+    
+    // 更新登入時間
+    const loginTime = new Date(userInfo.loginTime);
+    document.getElementById('loginTime').textContent = `登入時間：${loginTime.toLocaleString()}`;
+}
+
+// 測試串流連線
+async function testStreamConnection() {
+    const userSession = JSON.parse(localStorage.getItem('userSession'));
+    if (!userSession?.token) {
+        showMessage('請先登入');
         return;
     }
 
-    const HOSTIP = "3.107.21.209";
-    const username = userInfo.username;
-    const streamKey = userInfo.streamKey;
-    
-    // 更新頁面內容
-    document.getElementById("username").textContent = username;
-    document.getElementById("streamKey").textContent = streamKey;
-    
-    // 設定觀看連結
-    const watchUrl = `http://${HOSTIP}:8000/live/${username}/index.m3u8`;
-    document.getElementById("watchUrl").textContent = watchUrl;
-    document.getElementById("watchLink").href = watchUrl;
+    try {
+        const res = await fetch('http://3.107.21.209:8000/api/stream/test', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${userSession.token}`
+            }
+        });
+
+        const data = await res.json();
+        if (data.success) {
+            showMessage('串流連接測試成功！', 'success');
+        } else {
+            showMessage(data.message || '串流連接測試失敗');
+        }
+    } catch (error) {
+        console.error('串流測試錯誤:', error);
+        showMessage('串流連接測試失敗，請稍後再試');
+    }
 }
 
+// 檢查認證狀態
+async function checkAuth() {
+    try {
+        const sessionData = localStorage.getItem('userSession');
+        if (!sessionData) {
+            console.log('未找到登入資訊');
+            window.location.replace('login.html');
+            return false;
+        }
+
+        const session = JSON.parse(sessionData);
+        if (!session.token || !session.username) {
+            console.log('登入資訊不完整');
+            localStorage.removeItem('userSession');
+            window.location.replace('login.html');
+            return false;
+        }
+
+        // 檢查 token 是否過期
+        try {
+            const tokenData = JSON.parse(atob(session.token.split('.')[1]));
+            const currentTime = Math.floor(Date.now() / 1000);
+            const timeUntilExpiration = tokenData.exp - currentTime;
+
+            // 如果 token 已過期或將在 5 分鐘內過期，嘗試重新整理
+            if (currentTime >= tokenData.exp || timeUntilExpiration < 300) {
+                console.log('Token 已過期或即將過期，嘗試重新整理');
+                const refreshed = await refreshToken(session.token);
+                if (!refreshed) {
+                    localStorage.removeItem('userSession');
+                    window.location.replace('login.html');
+                    return false;
+                }
+            }
+        } catch (error) {
+            console.error('Token 解析錯誤:', error);
+            localStorage.removeItem('userSession');
+            window.location.replace('login.html');
+            return false;
+        }
+
+        // 驗證 token
+        try {
+            const response = await fetch('/api/auth/verify', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${session.token}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Token 驗證失敗');
+            }
+
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error('Token 驗證回應錯誤');
+            }
+
+            userInfo = session;
+            updateStreamInfo();
+            return true;
+        } catch (error) {
+            console.error('Token 驗證錯誤:', error);
+            localStorage.removeItem('userSession');
+            window.location.replace('login.html');
+            return false;
+        }
+    } catch (error) {
+        console.error('認證檢查錯誤:', error);
+        localStorage.removeItem('userSession');
+        window.location.replace('login.html');
+        return false;
+    }
+}
+
+// 重新整理 token
+async function refreshToken(oldToken) {
+    try {
+        const response = await fetch('/api/auth/refresh', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${oldToken}`
+            }
+        });
+
+        if (!response.ok) {
+            return false;
+        }
+
+        const data = await response.json();
+        if (!data.success || !data.data?.token) {
+            return false;
+        }
+
+        // 更新 session 中的 token
+        const session = JSON.parse(localStorage.getItem('userSession'));
+        session.token = data.data.token;
+        session.lastActivity = new Date().toISOString();
+        localStorage.setItem('userSession', JSON.stringify(session));
+
+        return true;
+    } catch (error) {
+        console.error('Token 重新整理錯誤:', error);
+        return false;
+    }
+}
+
+// 複製到剪貼簿
+function copyToClipboard(elementId) {
+    const element = document.getElementById(elementId);
+    const text = element.textContent;
+    
+    navigator.clipboard.writeText(text).then(() => {
+        showMessage('已複製到剪貼簿', 'success');
+    }).catch(err => {
+        console.error('複製失敗:', err);
+        showMessage('複製失敗，請手動複製', 'error');
+    });
+}
+
+// 登出
 function logout() {
-    // 清除所有存儲的資訊
-    localStorage.clear();
-    userInfo = null;
-    // 重定向到登入頁面
-    window.location.href = "login.html";
+    if (tokenRefreshInterval) {
+        clearInterval(tokenRefreshInterval);
+    }
+    localStorage.removeItem('userSession');
+    window.location.replace('login.html');
 }
 
-// 頁面載入時初始化
-window.addEventListener('load', initDashboard);
+// 頁面載入時檢查認證狀態
+window.addEventListener('load', async () => {
+    const isAuthenticated = await checkAuth();
+    if (isAuthenticated) {
+        // 開始定期檢查 token
+        tokenRefreshInterval = setInterval(async () => {
+            await checkAuth();
+        }, TOKEN_REFRESH_INTERVAL);
+    }
+});
+
+// 處理錯誤
+window.addEventListener('error', function(e) {
+    console.error('頁面發生錯誤:', e.error);
+});
+
+// 處理登出
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+    try {
+        const userSession = JSON.parse(localStorage.getItem('userSession'));
+        if (!userSession?.token) {
+            throw new Error('未找到登入資訊');
+        }
+
+        const res = await fetch('http://3.107.21.209:8000/api/auth/logout', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${userSession.token}`
+            }
+        });
+
+        if (!res.ok) {
+            throw new Error('登出請求失敗');
+        }
+
+        // 清除本地儲存的 session
+        localStorage.removeItem('userSession');
+        
+        // 重定向到登入頁面
+        window.location.href = 'http://3.107.21.209:8000/login';
+    } catch (error) {
+        console.error('登出錯誤:', error);
+        showMessage('登出失敗，請重試');
+    }
+});
 </script>
 </body>
 </html>

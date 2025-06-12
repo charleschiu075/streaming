@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>觀看直播</title>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
 <style>
 body {
     font-family: Arial, sans-serif;
@@ -191,169 +192,286 @@ video {
 </div>
 
 <script>
+// 全域變數
 let hls = null;
 let currentUsername = null;
+let streamCheckInterval = null;
+const HOSTIP = "3.107.21.209";
+const STREAM_CHECK_INTERVAL = 10000; // 10秒檢查一次串流狀態
+const MAX_RETRY_COUNT = 3; // 最大重試次數
+let retryCount = 0;
 
+// 顯示訊息
 function showStatus(message, type = 'loading') {
     const statusDiv = document.getElementById('status');
+    if (!statusDiv) return;
+    
     statusDiv.textContent = message;
     statusDiv.className = `status ${type}`;
     statusDiv.style.display = 'block';
 }
 
+// 隱藏訊息
 function hideStatus() {
     const statusDiv = document.getElementById('status');
+    if (!statusDiv) return;
+    
     statusDiv.style.display = 'none';
 }
 
+// 顯示串流資訊
 function showStreamInfo(username, streamUrl) {
-    document.getElementById('streamUrl').textContent = streamUrl;
-    document.getElementById('streamStatus').textContent = '連接中...';
-    document.getElementById('streamInfo').style.display = 'block';
+    const streamUrlElement = document.getElementById('streamUrl');
+    const streamStatusElement = document.getElementById('streamStatus');
+    const streamInfoElement = document.getElementById('streamInfo');
+    
+    if (!streamUrlElement || !streamStatusElement || !streamInfoElement) return;
+    
+    streamUrlElement.textContent = streamUrl;
+    streamStatusElement.textContent = '連接中...';
+    streamInfoElement.style.display = 'block';
 }
 
+// 更新串流狀態
 function updateStreamStatus(status) {
     const statusElement = document.getElementById('streamStatus');
-    if (statusElement) {
-        statusElement.textContent = status;
+    if (!statusElement) return;
+    
+    statusElement.textContent = status;
+}
+
+// 顯示影片播放器
+function showVideo() {
+    const placeholder = document.getElementById('placeholder');
+    const video = document.getElementById('video');
+    const controls = document.getElementById('controls');
+    
+    if (!placeholder || !video || !controls) return;
+    
+    placeholder.style.display = 'none';
+    video.style.display = 'block';
+    controls.style.display = 'flex';
+}
+
+// 隱藏影片播放器
+function hideVideo() {
+    const placeholder = document.getElementById('placeholder');
+    const video = document.getElementById('video');
+    const controls = document.getElementById('controls');
+    const streamInfo = document.getElementById('streamInfo');
+    
+    if (!placeholder || !video || !controls || !streamInfo) return;
+    
+    placeholder.style.display = 'flex';
+    video.style.display = 'none';
+    controls.style.display = 'none';
+    streamInfo.style.display = 'none';
+}
+
+// 檢查串流狀態
+async function checkStreamStatus(username) {
+    if (!username) return false;
+    
+    try {
+        const response = await fetch(`/api/stream/public/${username}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success && data.data.isStreaming) {
+            updateStreamStatus('直播中');
+            return true;
+        } else {
+            updateStreamStatus('未開播');
+            return false;
+        }
+    } catch (error) {
+        console.error('檢查串流狀態失敗:', error);
+        updateStreamStatus('狀態檢查失敗');
+        return false;
     }
 }
 
-function showVideo() {
-    document.getElementById('placeholder').style.display = 'none';
-    document.getElementById('video').style.display = 'block';
-    document.getElementById('controls').style.display = 'flex';
+// 開始定期檢查串流狀態
+function startStreamCheck(username) {
+    if (!username) return;
+    
+    // 清除現有的檢查間隔
+    if (streamCheckInterval) {
+        clearInterval(streamCheckInterval);
+    }
+    
+    // 立即檢查一次
+    checkStreamStatus(username);
+    
+    // 設定定期檢查
+    streamCheckInterval = setInterval(() => {
+        checkStreamStatus(username);
+    }, STREAM_CHECK_INTERVAL);
 }
 
-function hideVideo() {
-    document.getElementById('placeholder').style.display = 'flex';
-    document.getElementById('video').style.display = 'none';
-    document.getElementById('controls').style.display = 'none';
-    document.getElementById('streamInfo').style.display = 'none';
+// 停止定期檢查
+function stopStreamCheck() {
+    if (streamCheckInterval) {
+        clearInterval(streamCheckInterval);
+        streamCheckInterval = null;
+    }
 }
 
-function loadStream() {
-    const username = document.getElementById("usernameInput").value.trim();
+// 初始化 HLS 播放器
+function initHLS(video, streamUrl) {
+    if (hls) {
+        hls.destroy();
+        hls = null;
+    }
+
+    if (Hls.isSupported()) {
+        hls = new Hls({
+            debug: false,
+            enableWorker: true,
+            lowLatencyMode: true,
+            backBufferLength: 90
+        });
+
+        hls.loadSource(streamUrl);
+        hls.attachMedia(video);
+
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            console.log('HLS 串流已準備就緒');
+            video.play().catch(e => {
+                console.error('自動播放失敗:', e);
+                showStatus('請點擊播放按鈕開始播放', 'info');
+            });
+        });
+
+        hls.on(Hls.Events.ERROR, (event, data) => {
+            console.error('HLS 錯誤:', data);
+            if (data.fatal) {
+                switch (data.type) {
+                    case Hls.ErrorTypes.NETWORK_ERROR:
+                        console.log('網路錯誤，嘗試恢復...');
+                        hls.startLoad();
+                        break;
+                    case Hls.ErrorTypes.MEDIA_ERROR:
+                        console.log('媒體錯誤，嘗試恢復...');
+                        hls.recoverMediaError();
+                        break;
+                    default:
+                        console.log('無法恢復的錯誤');
+                        stopStream();
+                        showStatus('串流載入失敗，請重試', 'error');
+                        break;
+                }
+            }
+        });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        // 對於 Safari 等原生支援 HLS 的瀏覽器
+        video.src = streamUrl;
+        video.addEventListener('loadedmetadata', () => {
+            video.play().catch(e => {
+                console.error('自動播放失敗:', e);
+                showStatus('請點擊播放按鈕開始播放', 'info');
+            });
+        });
+    } else {
+        showStatus('您的瀏覽器不支援 HLS 串流', 'error');
+    }
+}
+
+// 載入串流
+async function loadStream() {
+    const usernameInput = document.getElementById("usernameInput");
+    if (!usernameInput) return;
+    
+    const username = usernameInput.value.trim();
     
     if (!username) {
         showStatus("請輸入直播主帳號", "error");
         return;
     }
     
-    const video = document.getElementById("video");
-    const HOSTIP = "3.107.21.209";
-    const streamUrl = `http://${HOSTIP}:8000/live/${username}/index.m3u8`;
-    
-    currentUsername = username;
-    showStatus("正在載入直播...", "loading");
-    showStreamInfo(username, streamUrl);
-    
-    // 清理之前的 HLS 實例
-    if (hls) {
-        hls.destroy();
-        hls = null;
-    }
-    
-    if (Hls.isSupported()) {
-        hls = new Hls({
-            enableWorker: true,
-            lowLatencyMode: true,
-            backBufferLength: 90
-        });
+    try {
+        const response = await fetch(`/api/stream/public/${username}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         
-        hls.loadSource(streamUrl);
-        hls.attachMedia(video);
+        const data = await response.json();
         
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            showStatus("串流載入成功，開始播放", "success");
-            updateStreamStatus("已連接");
-            showVideo();
-            video.play().catch(e => {
-                console.error("自動播放失敗:", e);
-                showStatus("請手動點擊播放按鈕", "error");
-            });
-            
+        if (!data.success) {
+            showStatus("找不到該直播主", "error");
+            return;
+        }
+
+        const video = document.getElementById("video");
+        if (!video) return;
+        
+        const streamUrl = `http://${HOSTIP}:8000/live/${username}/index.m3u8`;
+        
+        currentUsername = username;
+        showStatus("正在載入直播...", "loading");
+        showStreamInfo(username, streamUrl);
+        
+        // 初始化 HLS 播放器
+        initHLS(video, streamUrl);
+        
+        // 開始定期檢查串流狀態
+        startStreamCheck(username);
+        
+        // 顯示影片播放器
+        showVideo();
+        
+        // 重置重試計數
+        retryCount = 0;
+        
+    } catch (error) {
+        console.error('載入串流失敗:', error);
+        showStatus("載入串流失敗，請重試", "error");
+        
+        // 重試機制
+        if (retryCount < MAX_RETRY_COUNT) {
+            retryCount++;
             setTimeout(() => {
-                hideStatus();
-            }, 3000);
-        });
-        
-        hls.on(Hls.Events.ERROR, (event, data) => {
-            console.error("HLS 錯誤:", data);
-            updateStreamStatus("連接錯誤");
-            
-            if (data.fatal) {
-                switch (data.type) {
-                    case Hls.ErrorTypes.NETWORK_ERROR:
-                        showStatus("網路連接錯誤，請檢查網路連接", "error");
-                        break;
-                    case Hls.ErrorTypes.MEDIA_ERROR:
-                        showStatus("媒體錯誤，嘗試恢復...", "error");
-                        hls.recoverMediaError();
-                        break;
-                    default:
-                        showStatus("播放錯誤，請稍後再試", "error");
-                        hls.destroy();
-                        hls = null;
-                        break;
-                }
-            }
-        });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        // Safari 原生支援 HLS
-        video.src = streamUrl;
-        video.addEventListener('loadedmetadata', () => {
-            showStatus("串流載入成功，開始播放", "success");
-            updateStreamStatus("已連接");
-            showVideo();
-            video.play().catch(e => {
-                console.error("自動播放失敗:", e);
-                showStatus("請手動點擊播放按鈕", "error");
-            });
-            
-            setTimeout(() => {
-                hideStatus();
-            }, 3000);
-        });
-        
-        video.addEventListener('error', () => {
-            showStatus("播放錯誤，請檢查直播是否存在", "error");
-            updateStreamStatus("連接錯誤");
-        });
-    } else {
-        showStatus("您的瀏覽器不支援 HLS 播放", "error");
+                loadStream();
+            }, 2000);
+        }
     }
 }
 
 // 播放控制函數
 function playStream() {
     const video = document.getElementById("video");
-    if (video) {
-        video.play().catch(e => {
-            console.error("播放失敗:", e);
-            showStatus("播放失敗", "error");
-        });
-    }
+    if (!video) return;
+    
+    video.play().catch(e => {
+        console.error("播放失敗:", e);
+        showStatus("播放失敗", "error");
+    });
 }
 
 function pauseStream() {
     const video = document.getElementById("video");
-    if (video) {
-        video.pause();
-    }
+    if (!video) return;
+    
+    video.pause();
 }
 
 function stopStream() {
     const video = document.getElementById("video");
-    if (video) {
-        video.pause();
-        video.currentTime = 0;
-    }
+    if (!video) return;
+    
+    video.pause();
+    video.currentTime = 0;
     
     if (hls) {
         hls.destroy();
         hls = null;
     }
+    
+    // 停止定期檢查
+    stopStreamCheck();
     
     hideVideo();
     hideStatus();
@@ -362,10 +480,32 @@ function stopStream() {
 
 function toggleMute() {
     const video = document.getElementById("video");
-    if (video) {
-        video.muted = !video.muted;
-    }
+    if (!video) return;
+    
+    video.muted = !video.muted;
 }
+
+// 處理頁面載入
+window.addEventListener("load", () => {
+    const params = new URLSearchParams(window.location.search);
+    const userFromQuery = params.get("user");
+    if (userFromQuery) {
+        const input = document.getElementById("usernameInput");
+        if (input) {
+            input.value = userFromQuery;
+            loadStream();
+        }
+    }
+});
+
+// 處理頁面卸載
+window.addEventListener('beforeunload', () => {
+    stopStreamCheck();
+    if (hls) {
+        hls.destroy();
+        hls = null;
+    }
+});
 
 // Enter 鍵快捷播放
 document.addEventListener('keypress', function(e) {
@@ -373,3 +513,53 @@ document.addEventListener('keypress', function(e) {
         loadStream();
     }
 });
+
+// 獲取串流資訊
+async function getStreamInfo() {
+  const username = new URLSearchParams(window.location.search).get('username');
+  if (!username) {
+    showMessage('無效的串流地址');
+    return;
+  }
+
+  try {
+    const res = await fetch(`http://3.107.21.209:8000/api/stream/info/${username}`);
+    const data = await res.json();
+
+    if (data.success) {
+      document.getElementById('streamTitle').textContent = data.data.title || `${username} 的直播`;
+      document.getElementById('streamerName').textContent = username;
+      
+      // 更新串流地址
+      const hlsUrl = `http://3.107.21.209:8000/hls/${username}/index.m3u8`;
+      const dashUrl = `http://3.107.21.209:8000/dash/${username}/index.mpd`;
+      
+      // 設置 HLS 播放器
+      if (Hls.isSupported()) {
+        const hls = new Hls();
+        hls.loadSource(hlsUrl);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play();
+        });
+      }
+      // 設置 DASH 播放器
+      else if (dashjs.supportsMediaSource()) {
+        const player = dashjs.MediaPlayer().create();
+        player.initialize(video, dashUrl, true);
+      }
+      // 原生播放器
+      else {
+        video.src = hlsUrl;
+      }
+    } else {
+      showMessage(data.message || '無法獲取串流資訊');
+    }
+  } catch (error) {
+    console.error('獲取串流資訊錯誤:', error);
+    showMessage('獲取串流資訊失敗，請稍後再試');
+  }
+}
+</script>
+</body>
+</html>

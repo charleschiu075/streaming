@@ -116,98 +116,209 @@ button:disabled {
 </div>
 
 <script>
-// 檢查是否已經登入
-function checkExistingAuth() {
+
+// 檢查現有認證
+async function checkExistingAuth() {
+  try {
     const sessionData = localStorage.getItem('userSession');
-    if (sessionData) {
-        // 如果已經登入，直接跳轉到控制台
-        window.location.href = "dashboard.html";
+    if (!sessionData) {
+      return;
     }
-}
 
-function showMessage(text, type = 'error') {
-    const messageDiv = document.getElementById("message");
-    messageDiv.textContent = text;
-    messageDiv.className = `message ${type}`;
-}
-
-function showLoading(show = true) {
-    const loadingDiv = document.getElementById("loading");
-    const loginBtn = document.getElementById("loginBtn");
+    const userInfo = JSON.parse(sessionData);
     
-    if (show) {
-        loadingDiv.style.display = "block";
-        loginBtn.disabled = true;
-        loginBtn.textContent = "登入中...";
-    } else {
-        loadingDiv.style.display = "none";
-        loginBtn.disabled = false;
-        loginBtn.textContent = "登入";
+    // 檢查必要欄位
+    if (!userInfo.token || !userInfo.username) {
+      console.log('登入資訊不完整');
+      localStorage.removeItem('userSession');
+      return;
     }
-}
 
-document.getElementById("loginForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    
-    const username = document.getElementById("username").value.trim();
-    const password = document.getElementById("password").value;
-    
-    if (!username || !password) {
-        showMessage("請填寫所有欄位");
-        return;
-    }
-    
-    showLoading(true);
-    
+    // 檢查 token 是否過期
     try {
-        const res = await fetch("/api/auth/login", {
-            method: "POST",
-            headers: { 
-                "Content-Type": "application/json",
-                "Accept": "application/json"
-            },
-            body: JSON.stringify({ username, password }),
-        });
-        
-        const data = await res.json();
-        
-        if (res.ok && data.token) {
-            // 將用戶資訊存儲到 sessionStorage（僅在當前會話有效）
-            const userSession = {
-                token: data.token,
-                username: data.username,
-                streamKey: data.streamKey,
-                loginTime: new Date().toISOString()
-            };
-            localStorage.setItem('userSession', JSON.stringify(userSession));
-            
-            showMessage("登入成功！正在跳轉...", "success");
-            
-            // 延遲跳轉以顯示成功訊息
-            setTimeout(() => {
-                window.location.href = "dashboard.html";
-            }, 1000);
-            
-        } else {
-            showMessage(data.message || "登入失敗，請檢查帳號密碼");
-        }
-        
+      const tokenData = JSON.parse(atob(userInfo.token.split('.')[1]));
+      const currentTime = Math.floor(Date.now() / 1000);
+      
+      if (tokenData.exp < currentTime) {
+        console.log('Token 已過期');
+        localStorage.removeItem('userSession');
+        return;
+      }
     } catch (error) {
-        console.error("登入錯誤:", error);
-        showMessage("網路錯誤，請稍後再試");
-    } finally {
-        showLoading(false);
+      console.error('Token 解析錯誤:', error);
+      localStorage.removeItem('userSession');
+      return;
     }
+
+    // 驗證 token
+    try {
+      const res = await fetch('/api/auth/verify', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${userInfo.token}`
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error('Token 驗證失敗');
+      }
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error('Token 驗證回應錯誤');
+      }
+
+      // 只有在確認 token 有效時才重定向
+      window.location.replace("dashboard.html");
+    } catch (error) {
+      console.error('Token 驗證錯誤:', error);
+      localStorage.removeItem('userSession');
+    }
+  } catch (error) {
+    console.error('檢查認證狀態時發生錯誤:', error);
+    localStorage.removeItem('userSession');
+  }
+}
+
+// 顯示訊息
+function showMessage(text, type = 'error') {
+  const messageDiv = document.getElementById("message");
+  messageDiv.textContent = text;
+  messageDiv.className = `message ${type}`;
+  
+  // 3秒後自動隱藏錯誤訊息
+  if (type === 'error') {
+    setTimeout(() => {
+      messageDiv.style.display = 'none';
+    }, 3000);
+  }
+}
+
+// 顯示/隱藏載入狀態
+function showLoading(show = true) {
+  const loadingDiv = document.getElementById("loading");
+  const loginBtn = document.getElementById("loginBtn");
+
+  if (show) {
+    loadingDiv.style.display = "block";
+    loginBtn.disabled = true;
+    loginBtn.textContent = "登入中...";
+  } else {
+    loadingDiv.style.display = "none";
+    loginBtn.disabled = false;
+    loginBtn.textContent = "登入";
+  }
+}
+
+// 處理登入表單提交
+document.getElementById("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const username = document.getElementById("username").value.trim();
+  const password = document.getElementById("password").value;
+
+  if (!username || !password) {
+    showMessage("請填寫所有欄位");
+    return;
+  }
+
+  showLoading(true);
+
+  try {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify({ username, password }),
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.data?.token) {
+      const { token, username, streamKey } = data.data;
+
+      const userSession = {
+        token,
+        username,
+        streamKey,
+        loginTime: new Date().toISOString(),
+        lastActivity: new Date().toISOString()
+      };
+
+      try {
+        // 先清除舊的 session
+        localStorage.removeItem('userSession');
+        
+        // 儲存新的 session
+        localStorage.setItem('userSession', JSON.stringify(userSession));
+        
+        // 驗證儲存是否成功
+        const savedSession = localStorage.getItem('userSession');
+        if (!savedSession) {
+          throw new Error('Session 儲存失敗');
+        }
+
+        // 驗證儲存的資料是否正確
+        const parsedSession = JSON.parse(savedSession);
+        if (!parsedSession.token || !parsedSession.username) {
+          throw new Error('Session 資料不完整');
+        }
+
+        // 驗證 token 是否有效
+        const verifyRes = await fetch('http://3.107.21.209:8000/api/auth/verify', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!verifyRes.ok) {
+          throw new Error('Token 驗證失敗');
+        }
+
+        const verifyData = await verifyRes.json();
+        if (!verifyData.success) {
+          throw new Error('Token 驗證回應錯誤');
+        }
+
+        showMessage("登入成功！正在跳轉...", "success");
+        
+        // 使用 replace 而不是 href 來避免歷史記錄堆疊
+        window.location.replace("http://3.107.21.209:8000/dashboard");
+      } catch (error) {
+        console.error('Session 儲存或驗證錯誤:', error);
+        showMessage("登入狀態儲存失敗，請重試");
+        showLoading(false);
+      }
+    } else {
+      showMessage(data.message || "登入失敗，請檢查帳號密碼");
+      showLoading(false);
+    }
+
+  } catch (error) {
+    console.error("登入錯誤:", error);
+    showMessage("網路錯誤，請稍後再試");
+    showLoading(false);
+  }
 });
 
-// 頁面載入時檢查是否已登入
+// 頁面載入時檢查認證狀態
 window.addEventListener('load', checkExistingAuth);
 
-// Enter 鍵快捷登入
-document.addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') {
-        document.getElementById('loginForm').dispatchEvent(new Event('submit'));
+// 處理頁面卸載
+window.addEventListener('beforeunload', () => {
+  const sessionData = localStorage.getItem('userSession');
+  if (sessionData) {
+    try {
+      const session = JSON.parse(sessionData);
+      session.lastActivity = new Date().toISOString();
+      localStorage.setItem('userSession', JSON.stringify(session));
+    } catch (error) {
+      console.error('更新最後活動時間時發生錯誤:', error);
     }
+  }
 });
 </script>
 </body>

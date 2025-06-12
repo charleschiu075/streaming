@@ -1,5 +1,8 @@
 const jwt = require('jsonwebtoken');
 
+// 用於儲存已登出的 token
+const tokenBlacklist = new Set();
+
 /**
  * 環境變數驗證
  */
@@ -13,148 +16,106 @@ const validateEnvironment = () => {
  console.warn('⚠️ JWT_SECRET 長度較短，建議使用至少32字元的金鑰');
  }
 
+ // 檢查 JWT 過期時間設定
+ if (!process.env.JWT_EXPIRES_IN) {
+ console.warn('⚠️ JWT_EXPIRES_IN 未設定，使用預設值 24h');
+ }
+
  return true;
 };
 
 /**
+ * 將 token 加入黑名單
+ */
+const addToBlacklist = (token) => {
+ try {
+ const decoded = jwt.decode(token);
+ if (decoded && decoded.exp) {
+ // 只儲存未過期的 token
+ const currentTime = Math.floor(Date.now() / 1000);
+ if (decoded.exp > currentTime) {
+ tokenBlacklist.add(token);
+ // 設定自動清理（當 token 過期時）
+ setTimeout(() => {
+ tokenBlacklist.delete(token);
+ }, (decoded.exp - currentTime) * 1000);
+ }
+ }
+ } catch (error) {
+ console.error('Token 黑名單處理錯誤:', error);
+ }
+};
+
+/**
+ * 檢查 token 是否在黑名單中
+ */
+const isTokenBlacklisted = (token) => {
+ return tokenBlacklist.has(token);
+};
+
+/**
  * JWT 驗證中介軟體
- * 支援多種 token 傳遞方式
  */
 const verifyToken = (req, res, next) => {
- let token = null;
+  try {
+    // 從 Authorization header 取得 token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: '未提供有效的認證令牌',
+        code: 'NO_TOKEN'
+      });
+    }
 
- try {
- // 1. 從 Authorization header 取得 token
- const authHeader = req.headers.authorization;
- if (authHeader && authHeader.startsWith('Bearer ')) {
- token = authHeader.substring(7); // 移除 "Bearer " 前綴
- }
+    const token = authHeader.substring(7);
 
- // 2. 從 query parameter 取得 token (用於某些特殊情況)
- if (!token && req.query && req.query.token) {
- token = req.query.token;
- }
+    // 檢查 token 是否在黑名單中
+    if (isTokenBlacklisted(token)) {
+      return res.status(401).json({
+        success: false,
+        message: '令牌已被撤銷',
+        code: 'TOKEN_REVOKED'
+      });
+    }
 
- // 3. 從 body 取得 token (用於表單提交)
- if (!token && req.body && req.body.token) {
- token = req.body.token;
- }
+    // 驗證 token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
- // 4. 從 cookies 取得 token (如果使用 cookie 認證)
- if (!token && req.cookies && req.cookies.token) {
- token = req.cookies.token;
- }
+    // 檢查 token 是否包含必要資訊
+    if (!decoded.id || !decoded.username) {
+      return res.status(401).json({
+        success: false,
+        message: '令牌格式無效',
+        code: 'INVALID_TOKEN_FORMAT'
+      });
+    }
 
- if (!token) {
- return res.status(401).json({
- success: false,
- message: '存取被拒絕，未提供認證令牌',
- code: 'NO_TOKEN'
- });
- }
+    // 將使用者資訊附加到請求對象
+    req.user = {
+      id: decoded.id,
+      username: decoded.username,
+      streamKey: decoded.streamKey
+    };
 
- // 驗證環境配置
- if (!validateEnvironment()) {
- return res.status(500).json({
- success: false,
- message: '伺服器設定錯誤',
- code: 'SERVER_CONFIG_ERROR'
- });
- }
+    next();
+  } catch (err) {
+    console.error('JWT 驗證錯誤:', err.message);
 
- // 驗證 token
- const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: '令牌已過期，請重新登入',
+        code: 'TOKEN_EXPIRED'
+      });
+    }
 
- // 檢查 token 是否包含必要資訊
- if (!decoded.id || !decoded.username) {
- return res.status(401).json({
- success: false,
- message: '令牌格式無效',
- code: 'INVALID_TOKEN_FORMAT'
- });
- }
-
- // 檢查 token 的發行者和受眾（如果設定了）
- const expectedIssuer = 'live-streaming-platform';
- const expectedAudience = 'streaming-users';
-
- if (decoded.iss && decoded.iss !== expectedIssuer) {
- return res.status(401).json({
- success: false,
- message: '令牌發行者無效',
- code: 'INVALID_ISSUER'
- });
- }
-
- if (decoded.aud && decoded.aud !== expectedAudience) {
- return res.status(401).json({
- success: false,
- message: '令牌受眾無效',
- code: 'INVALID_AUDIENCE'
- });
- }
-
- // 將使用者資訊附加到請求對象
- req.user = {
- id: decoded.id,
- username: decoded.username,
- streamKey: decoded.streamKey,
- iat: decoded.iat,
- exp: decoded.exp
- };
-
- // 檢查 token 是否即將過期（在 1 小時內）
- const currentTime = Math.floor(Date.now() / 1000);
- const timeUntilExpiry = decoded.exp - currentTime;
-
- if (timeUntilExpiry < 3600) { // 1 小時 = 3600 秒
- res.setHeader('X-Token-Expires-Soon', 'true');
- res.setHeader('X-Token-Expires-In', timeUntilExpiry.toString());
- }
-
- // 記錄成功的認證（在偵錯模式下）
- if (process.env.NODE_ENV === 'development') {
- console.log(`[AUTH] 使用者認證成功: ${decoded.username}`);
- }
-
- next();
-
- } catch (err) {
- console.error('JWT 驗證錯誤:', {
- error: err.message,
- name: err.name,
- token: token ? `${token.substring(0, 10)}...` : 'null'
- });
-
- // 根據不同的錯誤類型傳回不同的回應
- if (err.name === 'TokenExpiredError') {
- return res.status(401).json({
- success: false,
- message: '令牌已過期，請重新登入',
- code: 'TOKEN_EXPIRED',
- expiredAt: err.expiredAt
- });
- } else if (err.name === 'JsonWebTokenError') {
- return res.status(401).json({
- success: false,
- message: '令牌無效',
- code: 'INVALID_TOKEN'
- });
- } else if (err.name === 'NotBeforeError') {
- return res.status(401).json({
- success: false,
- message: '令牌尚未生效',
- code: 'TOKEN_NOT_ACTIVE',
- notBefore: err.date
- });
- } else {
- return res.status(401).json({
- success: false,
- message: '令牌驗證失敗',
- code: 'TOKEN_VERIFICATION_FAILED'
- });
- }
- }
+    return res.status(401).json({
+      success: false,
+      message: '令牌驗證失敗',
+      code: 'TOKEN_VERIFICATION_FAILED'
+    });
+  }
 };
 
 /**
@@ -285,5 +246,7 @@ module.exports = {
  requireRole,
  createRateLimit,
  verifyApiKey,
- validateEnvironment
+ validateEnvironment,
+ addToBlacklist,
+ isTokenBlacklisted
 };

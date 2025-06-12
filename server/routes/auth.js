@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 // 確保正確導入 User 模型和中間件
 let User;
 let verifyToken;
+const { addToBlacklist } = require('../middleware/authMiddleware');
 
 try {
     User = require('../models/User');
@@ -370,10 +371,16 @@ router.get('/profile', verifyToken, async (req, res) => {
 });
 
 /**
- * 用戶登出（可選，主要用於記錄）
+ * 用戶登出
  */
 router.post('/logout', verifyToken, async (req, res) => {
     try {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (token) {
+            // 將 token 加入黑名單
+            addToBlacklist(token);
+        }
+
         console.log(`[AUTH] 用戶登出: ${req.user.username}`);
         
         res.json({
@@ -387,6 +394,47 @@ router.post('/logout', verifyToken, async (req, res) => {
             success: false,
             message: '登出失敗',
             code: 'LOGOUT_FAILED'
+        });
+    }
+});
+
+/**
+ * 驗證 Token
+ */
+router.get('/verify', verifyToken, async (req, res) => {
+    try {
+        if (!User) {
+            return res.status(500).json({
+                success: false,
+                message: '服務器配置錯誤',
+                code: 'SERVER_CONFIG_ERROR'
+            });
+        }
+
+        const user = await User.findById(req.user.id).select('-password');
+        if (!user || !user.isActive) {
+            return res.status(401).json({
+                success: false,
+                message: '用戶不存在或已被禁用',
+                code: 'USER_NOT_FOUND'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Token 有效',
+            data: {
+                username: user.username,
+                streamKey: user.streamKey
+            }
+        });
+
+    } catch (error) {
+        console.error('Token 驗證錯誤:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Token 驗證失敗',
+            code: 'TOKEN_VERIFICATION_FAILED'
         });
     }
 });
