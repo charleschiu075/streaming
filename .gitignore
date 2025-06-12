@@ -1,0 +1,17 @@
+server/.env
+
+docker-compose.yml
+
+/server/Dockerfile
+
+server/package-lock.json
+
+server/node_modules
+
+./.gitignore
+
+public/.env
+
+./.env
+
+nginx/Dockerfile
