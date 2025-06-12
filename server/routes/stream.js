@@ -2,34 +2,63 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 
-// 導入middleware和模型
+// 安全導入模組和middleware
 let User;
 let verifyToken;
 let streamMiddleware;
 
 try {
+    // 導入用戶模型
     User = require('../models/User');
+    
+    // 導入認證中間件
     const authMiddleware = require('../middleware/authMiddleware');
-    streamMiddleware = require('../middleware/streamMiddleware');
     verifyToken = authMiddleware.verifyToken;
+    
+    // 導入流媒體中間件
+    streamMiddleware = require('../middleware/streamMiddleware');
+    
+    // 檢查 streamMiddleware 是否正確載入
+    if (!streamMiddleware) {
+        throw new Error('streamMiddleware 載入失敗');
+    }
+    
+    console.log('[STREAM] 模組載入成功');
+    
 } catch (error) {
-    console.error('模块导入错误:', error);
+    console.error('[STREAM] 模組載入錯誤:', error.message);
+    console.error('[STREAM] 堆疊追蹤:', error.stack);
+    
+    // 建立空的中間件函數避免應用程式崩潰
+    streamMiddleware = {
+        validateStreamKey: () => false,
+        isUserStreaming: () => false,
+        validateUsername: (req, res, next) => next(),
+        checkUserModel: () => (req, res, next) => next(),
+        validateStreamKeyMiddleware: (req, res, next) => next(),
+        logRTMPRequest: (req, res, next) => next(),
+        checkStreamingStatus: (req, res, next) => next(),
+        handleStreamEnd: (req, res, next) => next(),
+        generateStreamUrls: () => ({}),
+        formatUserStreamData: () => ({}),
+        limitResults: () => (req, res, next) => next()
+    };
 }
 
-// 解構middleware函數
+// 解構中間件函數，並提供預設值
 const {
-    validateStreamKey,
-    isUserStreaming,
-    validateUsername,
-    checkUserModel,
-    validateStreamKeyMiddleware,
-    logRTMPRequest,
-    checkStreamingStatus,
-    handleStreamEnd,
-    generateStreamUrls,
-    formatUserStreamData,
-    limitResults
-} = streamMiddleware;
+    validateStreamKey = () => false,
+    isUserStreaming = () => false,
+    validateUsername = (req, res, next) => next(),
+    checkUserModel = () => (req, res, next) => next(),
+    validateStreamKeyMiddleware = (req, res, next) => next(),
+    logRTMPRequest = (req, res, next) => next(),
+    checkStreamingStatus = (req, res, next) => next(),
+    handleStreamEnd = (req, res, next) => next(),
+    generateStreamUrls = () => ({}),
+    formatUserStreamData = () => ({}),
+    limitResults = () => (req, res, next) => next()
+} = streamMiddleware || {};
 
 /**
  * RTMP on_publish 驗證接口
@@ -40,14 +69,25 @@ router.post('/verify',
     logRTMPRequest,
     validateStreamKeyMiddleware,
     async (req, res) => {
+        console.log('[DEBUG] 收到 RTMP 驗證請求:', req.body);
         try {
+            // 檢查是否有可用的 User 模型
+            if (!User) {
+                console.error('[RTMP] ❌ User 模型未載入');
+                return res.status(500).json({
+                    success: false,
+                    message: '伺服器配置錯誤',
+                    code: 'SERVER_CONFIG_ERROR'
+                });
+            }
+
             const streamKey = req.validatedStreamKey;
             
             // 查找用戶
-            const user = await req.User.findOne({ streamKey }).select('username isActive lastStreamTime');
+            const user = await User.findOne({ streamKey }).select('username isActive lastStreamTime');
             
             if (!user) {
-                console.log('[RTMP] ❌ 未找到对应的串流密钥:', streamKey.substring(0, 10) + '...');
+                console.log('[RTMP] ❌ 未找到对应的串流密钥:', streamKey ? streamKey.substring(0, 10) + '...' : 'undefined');
                 return res.status(403).json({
                     success: false,
                     message: '串流密钥无效',
@@ -57,16 +97,16 @@ router.post('/verify',
             
             // 檢查用戶禁用狀態
             if (!user.isActive) {
-                console.log('[RTMP] ❌ 用户账户已被禁用:', user.username);
+                console.log('[RTMP] ❌ 禁用帳戶:', user.username);
                 return res.status(403).json({
                     success: false,
-                    message: '账户已被禁用',
+                    message: '禁用帳戶',
                     code: 'ACCOUNT_DISABLED'
                 });
             }
             
             // 更新用户的最後推流時間
-            const updateResult = await req.User.updateOne(
+            const updateResult = await User.updateOne(
                 { _id: user._id },
                 { 
                     lastStreamTime: new Date(),
@@ -75,22 +115,22 @@ router.post('/verify',
             );
             
             if (updateResult.acknowledged) {
-                console.log(`[RTMP] ✅ 推流验证成功: ${user.username} (${streamKey.substring(0, 10)}...)`);
+                console.log(`[RTMP] ✅ 驗證成功: ${user.username} (${streamKey ? streamKey.substring(0, 10) : 'unknown'}...)`);
             }
             
             // 返回成功（Nginx 需要 200 状态码）
             return res.status(200).json({
                 success: true,
-                message: '推流验证成功',
+                message: '推流驗證成功',
                 username: user.username,
                 timestamp: new Date().toISOString()
             });
             
         } catch (error) {
-            console.error('[RTMP] 推流验证错误:', error);
+            console.error('[RTMP] 推流驗證失敗:', error);
             return res.status(500).json({
                 success: false,
-                message: '服务器内部错误',
+                message: '伺服器錯誤',
                 code: 'INTERNAL_SERVER_ERROR'
             });
         }
@@ -106,12 +146,21 @@ router.post('/end',
     handleStreamEnd,
     async (req, res) => {
         try {
-            const { streamKey } = req.streamEndData;
+            if (!User) {
+                return res.status(500).json({
+                    success: false,
+                    message: '伺服器配置錯誤',
+                    code: 'SERVER_CONFIG_ERROR'
+                });
+            }
+
+            const streamEndData = req.streamEndData || {};
+            const { streamKey } = streamEndData;
             
             if (streamKey) {
-                const user = await req.User.findOne({ streamKey }).select('username');
+                const user = await User.findOne({ streamKey }).select('username');
                 if (user) {
-                    await req.User.updateOne(
+                    await User.updateOne(
                         { _id: user._id },
                         { lastStreamEndTime: new Date() }
                     );
@@ -143,7 +192,15 @@ router.get('/status',
     checkUserModel(User),
     async (req, res) => {
         try {
-            const user = await req.User.findById(req.user.id).select(
+            if (!User) {
+                return res.status(500).json({
+                    success: false,
+                    message: '伺服器配置錯誤',
+                    code: 'SERVER_CONFIG_ERROR'
+                });
+            }
+
+            const user = await User.findById(req.user.id).select(
                 'username streamKey lastStreamTime lastStreamEndTime isActive'
             );
             
@@ -182,7 +239,15 @@ router.post('/regenerate-key',
     checkUserModel(User),
     async (req, res) => {
         try {
-            const user = await req.User.findById(req.user.id).select('username streamKey');
+            if (!User) {
+                return res.status(500).json({
+                    success: false,
+                    message: '伺服器配置錯誤',
+                    code: 'SERVER_CONFIG_ERROR'
+                });
+            }
+
+            const user = await User.findById(req.user.id).select('username streamKey lastStreamTime');
             if (!user) {
                 return res.status(404).json({
                     success: false,
@@ -212,7 +277,7 @@ router.post('/regenerate-key',
                 const randomPart = uuidv4().replace(/-/g, '').substring(0, 16);
                 newStreamKey = `${user.username}_${timestamp}_${randomPart}`;
                 
-                const existingUser = await req.User.findOne({ streamKey: newStreamKey });
+                const existingUser = await User.findOne({ streamKey: newStreamKey });
                 if (!existingUser) {
                     isUnique = true;
                 }
@@ -228,7 +293,7 @@ router.post('/regenerate-key',
             }
             
             // 更新用户的串流金鑰
-            const updateResult = await req.User.updateOne(
+            const updateResult = await User.updateOne(
                 { _id: user._id },
                 { 
                     streamKey: newStreamKey,
@@ -274,9 +339,17 @@ router.get('/public/:username',
     checkUserModel(User),
     async (req, res) => {
         try {
+            if (!User) {
+                return res.status(500).json({
+                    success: false,
+                    message: '伺服器配置錯誤',
+                    code: 'SERVER_CONFIG_ERROR'
+                });
+            }
+
             const { username } = req.params;
             
-            const user = await req.User.findOne({ 
+            const user = await User.findOne({ 
                 username: { $regex: new RegExp(`^${username}$`, 'i') }
             }).select('username lastStreamTime isActive');
             
@@ -315,13 +388,21 @@ router.get('/online',
     limitResults(50),
     async (req, res) => {
         try {
+            if (!User) {
+                return res.status(500).json({
+                    success: false,
+                    message: '伺服器配置錯誤',
+                    code: 'SERVER_CONFIG_ERROR'
+                });
+            }
+
             // 查找最近1分鐘內有推流的用戶
             const oneMinuteAgo = new Date(Date.now() - 60000);
             
-            const onlineUsers = await req.User.find({
+            const onlineUsers = await User.find({
                 isActive: true,
                 lastStreamTime: { $gte: oneMinuteAgo }
-            }).select('username lastStreamTime').limit(req.resultLimit);
+            }).select('username lastStreamTime').limit(req.resultLimit || 50);
             
             const formattedUsers = onlineUsers.map(user => ({
                 username: user.username,
@@ -353,12 +434,19 @@ router.get('/online',
  * 健康檢查端點
  */
 router.get('/health', (req, res) => {
-    res.json({
+    const healthData = {
         success: true,
         message: '串流服务运行正常',
         timestamp: new Date().toISOString(),
-        version: '1.0.0'
-    });
+        version: '1.0.0',
+        modules: {
+            User: !!User,
+            verifyToken: !!verifyToken,
+            streamMiddleware: !!streamMiddleware
+        }
+    };
+    
+    res.json(healthData);
 });
 
 /**
@@ -369,17 +457,25 @@ router.get('/stats',
     checkUserModel(User),
     async (req, res) => {
         try {
+            if (!User) {
+                return res.status(500).json({
+                    success: false,
+                    message: '伺服器配置錯誤',
+                    code: 'SERVER_CONFIG_ERROR'
+                });
+            }
+
             const oneMinuteAgo = new Date(Date.now() - 60000);
             const oneDayAgo = new Date(Date.now() - 86400000);
             
             const [totalUsers, activeUsers, onlineUsers, recentStreams] = await Promise.all([
-                req.User.countDocuments({}),
-                req.User.countDocuments({ isActive: true }),
-                req.User.countDocuments({ 
+                User.countDocuments({}),
+                User.countDocuments({ isActive: true }),
+                User.countDocuments({ 
                     isActive: true,
                     lastStreamTime: { $gte: oneMinuteAgo }
                 }),
-                req.User.countDocuments({
+                User.countDocuments({
                     lastStreamTime: { $gte: oneDayAgo }
                 })
             ]);

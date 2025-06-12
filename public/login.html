@@ -118,7 +118,7 @@ button:disabled {
 <script>
 // 檢查是否已經登入
 function checkExistingAuth() {
-    const sessionData = sessionStorage.getItem('userSession');
+    const sessionData = localStorage.getItem('userSession');
     if (sessionData) {
         // 如果已經登入，直接跳轉到控制台
         window.location.href = "dashboard.html";
@@ -179,8 +179,7 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
                 streamKey: data.streamKey,
                 loginTime: new Date().toISOString()
             };
-            
-            sessionStorage.setItem('userSession', JSON.stringify(userSession));
+            localStorage.setItem('userSession', JSON.stringify(userSession));
             
             showMessage("登入成功！正在跳轉...", "success");
             
